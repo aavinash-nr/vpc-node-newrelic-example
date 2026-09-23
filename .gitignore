@@ -1,0 +1,8 @@
+.aws-sam/
+node_modules/
+hello-world/node_modules/
+.DS_Store
+.env
+.env.*
+*.local
+samconfig.toml

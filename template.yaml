@@ -1,0 +1,222 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  nodejs-22-arm64-vpc-use1
+
+  Sample SAM template for a Node.js 22 Lambda using the New Relic ARM64 layer and a dedicated VPC.
+
+Globals:
+  Function:
+    Timeout: 10
+
+Parameters:
+  FunctionName:
+    Type: String
+    Default: nodejs-22-arm64-vpc-use1
+  NewRelicAccountId:
+    Type: String
+    Description: New Relic account ID that will receive telemetry from this function
+  NewRelicLicenseKey:
+    Type: String
+    NoEcho: true
+    Description: New Relic ingest license key for this environment
+  NewRelicLayerVersion:
+    Type: Number
+    Default: 35
+    Description: New Relic Node.js ARM64 layer version to use in the deployment region
+
+Resources:
+  LambdaVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: nodejs-22-arm64-vpc-use1
+
+  LambdaInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: nodejs-22-arm64-vpc-use1-igw
+
+  LambdaInternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref LambdaInternetGateway
+      VpcId: !Ref LambdaVpc
+
+  PublicSubnetAzA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: 10.0.0.0/24
+      MapPublicIpOnLaunch: true
+      VpcId: !Ref LambdaVpc
+      Tags:
+        - Key: Name
+          Value: nodejs-22-arm64-vpc-use1-public-a
+
+  PublicSubnetAzB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      VpcId: !Ref LambdaVpc
+      Tags:
+        - Key: Name
+          Value: nodejs-22-arm64-vpc-use1-public-b
+
+  PrivateSubnetAzA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: 10.0.10.0/24
+      MapPublicIpOnLaunch: false
+      VpcId: !Ref LambdaVpc
+      Tags:
+        - Key: Name
+          Value: nodejs-22-arm64-vpc-use1-private-a
+
+  PrivateSubnetAzB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: 10.0.11.0/24
+      MapPublicIpOnLaunch: false
+      VpcId: !Ref LambdaVpc
+      Tags:
+        - Key: Name
+          Value: nodejs-22-arm64-vpc-use1-private-b
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref LambdaVpc
+      Tags:
+        - Key: Name
+          Value: nodejs-22-arm64-vpc-use1-public
+
+  PublicDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: LambdaInternetGatewayAttachment
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref LambdaInternetGateway
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnetRouteTableAssociationAzA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnetAzA
+
+  PublicSubnetRouteTableAssociationAzB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnetAzB
+
+  NatElasticIp:
+    Type: AWS::EC2::EIP
+    DependsOn: LambdaInternetGatewayAttachment
+    Properties:
+      Domain: vpc
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatElasticIp.AllocationId
+      SubnetId: !Ref PublicSubnetAzA
+      Tags:
+        - Key: Name
+          Value: nodejs-22-arm64-vpc-use1-nat
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref LambdaVpc
+      Tags:
+        - Key: Name
+          Value: nodejs-22-arm64-vpc-use1-private
+
+  PrivateDefaultRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnetRouteTableAssociationAzA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnetAzA
+
+  PrivateSubnetRouteTableAssociationAzB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnetAzB
+
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for the Node.js Lambda function
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: -1
+      VpcId: !Ref LambdaVpc
+      Tags:
+        - Key: Name
+          Value: nodejs-22-arm64-vpc-use1-lambda-sg
+
+  HelloWorldFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: hello-world/
+      Handler: /opt/nodejs/node_modules/newrelic-esm-lambda-wrapper/index.handler
+      Runtime: nodejs22.x
+      Architectures:
+        - arm64
+      FunctionName: !Ref FunctionName
+      Policies:
+        - AWSLambdaVPCAccessExecutionRole
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnetAzA
+          - !Ref PrivateSubnetAzB
+      Environment:
+        Variables:
+          NEW_RELIC_ACCOUNT_ID: !Ref NewRelicAccountId
+          NEW_RELIC_LAMBDA_HANDLER: app.lambdaHandler
+          NEW_RELIC_LICENSE_KEY: !Ref NewRelicLicenseKey
+          NEW_RELIC_EXTENSION_LOG_LEVEL: DEBUG
+          NEW_RELIC_EXTENSION_SEND_EXTENSION_LOGS: 'false'
+          NEW_RELIC_EXTENSION_SEND_FUNCTION_LOGS: 'true'
+          NEW_RELIC_LAMBDA_EXTENSION_ENABLED: 'true'
+      Layers:
+        - !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:451483290750:layer:NewRelicNodeJSARM64:${NewRelicLayerVersion}
+
+Outputs:
+  HelloWorldFunctionArn:
+    Description: Hello World Lambda Function ARN
+    Value: !GetAtt HelloWorldFunction.Arn
+  HelloWorldFunctionIamRole:
+    Description: Implicit IAM role created for the Lambda function
+    Value: !GetAtt HelloWorldFunctionRole.Arn
+  HelloWorldFunctionVpcId:
+    Description: VPC used by the Lambda function
+    Value: !Ref LambdaVpc
+  HelloWorldFunctionPrivateSubnets:
+    Description: Private subnets used by the Lambda function
+    Value: !Join [',', [!Ref PrivateSubnetAzA, !Ref PrivateSubnetAzB]]
+  HelloWorldFunctionSecurityGroup:
+    Description: Security group attached to the Lambda function
+    Value: !Ref LambdaSecurityGroup
