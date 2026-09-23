@@ -74,9 +74,3 @@ cd hello-world
 npm install
 npm test
 ```
-
-## GitHub readiness
-
-- No credentials are stored in the template or handler code.
-- Provide secrets such as `NewRelicLicenseKey` only at deploy time.
-- Local build artifacts, dependency folders, and the live `samconfig.toml` are ignored via `.gitignore`.
